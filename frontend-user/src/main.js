@@ -19,6 +19,15 @@ class App {
     this.currentAnalysisResult = null;
     this.currentFileName = '';
     this.selectedRecordId = null;
+    // 历史记录视图状态（检索、排序、选中项），用于返回列表时恢复
+    this.recordsViewState = {
+      query: '',
+      sortBy: 'time-desc',
+      selectedIds: new Set()
+    };
+    this.recordsScrollTop = 0;
+    this.searchDebounceTimer = null;
+    this.VIEW_STATE_KEY = 'guqin_records_view_state';
   }
 
   async init() {
@@ -36,6 +45,9 @@ class App {
 
       // 绑定事件
       this.bindEvents();
+
+      // 恢复上次的检索/排序状态
+      this.restoreRecordsViewState();
 
       // 加载历史记录列表
       this.updateRecordsList();
@@ -320,6 +332,33 @@ class App {
     // 展开/收起记录列表
     document.getElementById('toggleRecordsBtn').addEventListener('click', () => this.toggleRecordsPanel());
 
+    // 检索输入（防抖）
+    document.getElementById('recordSearchInput').addEventListener('input', () => this.handleSearchInput());
+
+    // 清除检索
+    document.getElementById('clearSearchBtn').addEventListener('click', () => this.clearSearch());
+
+    // 排序方式
+    document.getElementById('recordSortSelect').addEventListener('change', (e) => {
+      this.recordsViewState.sortBy = e.target.value;
+      this.saveRecordsViewState();
+      this.updateRecordsList();
+    });
+
+    // 全选
+    document.getElementById('selectAllRecords').addEventListener('change', (e) => {
+      this.toggleSelectAll(e.target.checked);
+    });
+
+    // 导出选中记录
+    document.getElementById('exportRecordsBtn').addEventListener('click', () => this.exportSelectedRecords());
+
+    // 记录列表滚动位置跟踪
+    document.getElementById('recordsContent').addEventListener('scroll', (e) => {
+      this.recordsScrollTop = e.target.scrollTop;
+      this.saveRecordsViewState();
+    });
+
     // 关闭模态框
     document.getElementById('closeModalBtn').addEventListener('click', () => this.closeRecordModal());
     document.getElementById('recordDetailModal').addEventListener('click', (e) => {
@@ -402,38 +441,251 @@ class App {
   }
 
   updateRecordsList() {
-    const records = this.recordManager.getAllRecords();
+    const allRecords = this.recordManager.getAllRecords();
     const recordsList = document.getElementById('recordsList');
     const recordsEmpty = document.getElementById('recordsEmpty');
+    const recordsNoResult = document.getElementById('recordsNoResult');
 
-    if (records.length === 0) {
+    // 清理已不存在的选中项
+    const existingIds = new Set(allRecords.map(r => r.id));
+    this.recordsViewState.selectedIds.forEach(id => {
+      if (!existingIds.has(id)) {
+        this.recordsViewState.selectedIds.delete(id);
+      }
+    });
+
+    if (allRecords.length === 0) {
       recordsList.style.display = 'none';
       recordsEmpty.style.display = 'flex';
+      recordsNoResult.style.display = 'none';
+      this.updateSelectionBar([]);
       return;
     }
 
-    recordsList.style.display = 'block';
+    const records = this.recordManager.queryRecords({
+      query: this.recordsViewState.query,
+      sortBy: this.recordsViewState.sortBy
+    });
+
     recordsEmpty.style.display = 'none';
+
+    // 有记录但检索无匹配结果
+    if (records.length === 0) {
+      recordsList.style.display = 'none';
+      recordsNoResult.style.display = 'flex';
+      this.updateSelectionBar([]);
+      return;
+    }
+
+    recordsNoResult.style.display = 'none';
+    recordsList.style.display = 'block';
 
     recordsList.innerHTML = records.map(record => `
       <div class="record-item" data-id="${record.id}">
-        <div class="record-main">
-          <span class="record-name" title="${record.name}">${this.truncateText(record.name, 25)}</span>
-          <span class="record-freq">${record.fundamentalFreq.toFixed(1)} Hz</span>
-        </div>
-        <div class="record-meta">
-          <span class="record-file" title="${record.fileName}">${this.truncateText(record.fileName, 20)}</span>
-          <span class="record-time">${this.recordManager.formatDate(record.createdAt)}</span>
+        <input type="checkbox" class="record-checkbox" data-id="${record.id}" ${this.recordsViewState.selectedIds.has(record.id) ? 'checked' : ''}>
+        <div class="record-info">
+          <div class="record-main">
+            <span class="record-name" title="${this.escapeHtml(record.name)}">${this.escapeHtml(this.truncateText(record.name, 25))}</span>
+            <span class="record-freq">${record.fundamentalFreq.toFixed(1)} Hz</span>
+          </div>
+          <div class="record-meta">
+            <span class="record-file" title="${this.escapeHtml(record.fileName)}">${this.escapeHtml(this.truncateText(record.fileName, 20))}</span>
+            <span class="record-time">${this.recordManager.formatDate(record.createdAt)}</span>
+          </div>
         </div>
       </div>
     `).join('');
 
     recordsList.querySelectorAll('.record-item').forEach(item => {
-      item.addEventListener('click', () => {
-        const id = item.dataset.id;
-        this.showRecordDetail(id);
+      item.addEventListener('click', (e) => {
+        // 点击复选框时不打开详情
+        if (e.target.classList.contains('record-checkbox')) return;
+        this.showRecordDetail(item.dataset.id);
       });
     });
+
+    recordsList.querySelectorAll('.record-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', () => {
+        const id = checkbox.dataset.id;
+        if (checkbox.checked) {
+          this.recordsViewState.selectedIds.add(id);
+        } else {
+          this.recordsViewState.selectedIds.delete(id);
+        }
+        this.updateSelectionBar(this.recordManager.queryRecords({
+          query: this.recordsViewState.query,
+          sortBy: this.recordsViewState.sortBy
+        }));
+      });
+    });
+
+    // 恢复列表滚动位置（打开详情再返回、删除记录后保持原位）
+    document.getElementById('recordsContent').scrollTop = this.recordsScrollTop;
+
+    this.updateSelectionBar(records);
+  }
+
+  /**
+   * 处理检索输入（防抖 + 校验）
+   */
+  handleSearchInput() {
+    clearTimeout(this.searchDebounceTimer);
+    this.searchDebounceTimer = setTimeout(() => {
+      const input = document.getElementById('recordSearchInput');
+      const hint = document.getElementById('searchHint');
+      const query = input.value;
+
+      const { valid, error } = this.recordManager.validateSearchQuery(query);
+      if (!valid) {
+        // 校验失败：提示原因，保持上次有效的检索结果不变
+        hint.textContent = error;
+        hint.style.display = 'block';
+        input.classList.add('input-error');
+        logger.warn('检索条件校验失败', { error });
+        return;
+      }
+
+      hint.style.display = 'none';
+      input.classList.remove('input-error');
+      this.recordsViewState.query = query;
+      this.saveRecordsViewState();
+      this.updateRecordsList();
+    }, 200);
+  }
+
+  /**
+   * 清除检索条件
+   */
+  clearSearch() {
+    const input = document.getElementById('recordSearchInput');
+    input.value = '';
+    input.classList.remove('input-error');
+    document.getElementById('searchHint').style.display = 'none';
+    this.recordsViewState.query = '';
+    this.saveRecordsViewState();
+    this.updateRecordsList();
+  }
+
+  /**
+   * 全选/取消全选当前筛选结果
+   * @param {boolean} checked - 是否全选
+   */
+  toggleSelectAll(checked) {
+    const visible = this.recordManager.queryRecords({
+      query: this.recordsViewState.query,
+      sortBy: this.recordsViewState.sortBy
+    });
+    visible.forEach(record => {
+      if (checked) {
+        this.recordsViewState.selectedIds.add(record.id);
+      } else {
+        this.recordsViewState.selectedIds.delete(record.id);
+      }
+    });
+    this.updateRecordsList();
+  }
+
+  /**
+   * 更新选中状态栏（计数、导出按钮、全选框状态）
+   * @param {Array} visibleRecords - 当前筛选出的记录
+   */
+  updateSelectionBar(visibleRecords) {
+    const count = this.recordsViewState.selectedIds.size;
+    document.getElementById('selectedCount').textContent = `已选 ${count} 条`;
+    document.getElementById('exportRecordsBtn').disabled = count === 0;
+
+    const selectAll = document.getElementById('selectAllRecords');
+    const selectedVisible = visibleRecords.filter(r => this.recordsViewState.selectedIds.has(r.id));
+    selectAll.checked = visibleRecords.length > 0 && selectedVisible.length === visibleRecords.length;
+    selectAll.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleRecords.length;
+  }
+
+  /**
+   * 导出选中的记录为归档文件
+   */
+  exportSelectedRecords() {
+    const ids = [...this.recordsViewState.selectedIds];
+    if (ids.length === 0) {
+      this.uiController.showToast('请先勾选要导出的记录', 'warning');
+      return;
+    }
+
+    try {
+      const json = this.recordManager.exportRecordsByIds(ids);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `guqin-records-archive-${stamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+
+      this.uiController.showToast(`已导出 ${ids.length} 条记录`, 'success');
+      logger.info('导出记录归档成功', { count: ids.length });
+    } catch (error) {
+      logger.error('导出记录归档失败', error);
+      this.uiController.showToast('导出失败，请重试', 'error');
+    }
+  }
+
+  /**
+   * 保存记录视图状态到 sessionStorage
+   */
+  saveRecordsViewState() {
+    try {
+      sessionStorage.setItem(this.VIEW_STATE_KEY, JSON.stringify({
+        query: this.recordsViewState.query,
+        sortBy: this.recordsViewState.sortBy,
+        scrollTop: this.recordsScrollTop
+      }));
+    } catch (error) {
+      logger.warn('保存视图状态失败', error);
+    }
+  }
+
+  /**
+   * 从 sessionStorage 恢复记录视图状态
+   */
+  restoreRecordsViewState() {
+    try {
+      const raw = sessionStorage.getItem(this.VIEW_STATE_KEY);
+      if (raw) {
+        const state = JSON.parse(raw);
+        if (typeof state.query === 'string') {
+          this.recordsViewState.query = state.query;
+        }
+        if (typeof state.sortBy === 'string') {
+          this.recordsViewState.sortBy = state.sortBy;
+        }
+        if (typeof state.scrollTop === 'number') {
+          this.recordsScrollTop = state.scrollTop;
+        }
+      }
+    } catch (error) {
+      logger.warn('恢复视图状态失败', error);
+    }
+
+    // 同步到界面控件
+    document.getElementById('recordSearchInput').value = this.recordsViewState.query;
+    document.getElementById('recordSortSelect').value = this.recordsViewState.sortBy;
+  }
+
+  /**
+   * HTML 转义，防止记录名称等内容注入
+   * @param {string} text - 原始文本
+   * @returns {string} 转义后的文本
+   */
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text == null ? '' : String(text);
+    return div.innerHTML;
   }
 
   truncateText(text, maxLength) {
@@ -442,14 +694,14 @@ class App {
   }
 
   toggleRecordsPanel() {
-    const content = document.getElementById('recordsContent');
+    const wrapper = document.getElementById('recordsWrapper');
     const btn = document.getElementById('toggleRecordsBtn');
-    
-    if (content.style.display === 'none') {
-      content.style.display = 'block';
+
+    if (wrapper.style.display === 'none') {
+      wrapper.style.display = 'block';
       btn.textContent = '▼';
     } else {
-      content.style.display = 'none';
+      wrapper.style.display = 'none';
       btn.textContent = '▶';
     }
   }
@@ -470,7 +722,7 @@ class App {
           <div class="detail-grid">
             <div class="detail-item">
               <span class="detail-label">文件名</span>
-              <span class="detail-value">${record.fileName}</span>
+              <span class="detail-value">${this.escapeHtml(record.fileName)}</span>
             </div>
             <div class="detail-item">
               <span class="detail-label">创建时间</span>
@@ -527,7 +779,7 @@ class App {
         ${record.note ? `
           <div class="detail-section">
             <h4>备注</h4>
-            <p class="record-note">${record.note}</p>
+            <p class="record-note">${this.escapeHtml(record.note)}</p>
           </div>
         ` : ''}
       </div>
@@ -539,6 +791,8 @@ class App {
   closeRecordModal() {
     document.getElementById('recordDetailModal').style.display = 'none';
     this.selectedRecordId = null;
+    // 返回列表时恢复之前的滚动位置
+    document.getElementById('recordsContent').scrollTop = this.recordsScrollTop;
   }
 
   applyRecord() {

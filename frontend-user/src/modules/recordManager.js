@@ -9,6 +9,7 @@ export class RecordManager {
   constructor() {
     this.STORAGE_KEY = 'guqin_audio_records';
     this.MAX_RECORDS = 50;
+    this.MAX_SEARCH_LENGTH = 50;
     this.records = this.loadRecords();
   }
 
@@ -90,6 +91,72 @@ export class RecordManager {
    */
   getAllRecords() {
     return [...this.records];
+  }
+
+  /**
+   * 校验检索关键词
+   * @param {string} query - 检索关键词
+   * @returns {{valid: boolean, error: string|null}} 校验结果
+   */
+  validateSearchQuery(query) {
+    if (!query || !query.trim()) {
+      return { valid: true, error: null };
+    }
+
+    if (query.length > this.MAX_SEARCH_LENGTH) {
+      return {
+        valid: false,
+        error: `检索条件过长，请控制在 ${this.MAX_SEARCH_LENGTH} 个字符以内（当前 ${query.length} 个字符）`
+      };
+    }
+
+    // 允许中英文、数字、空格及常见文件名字符
+    const validPattern = /^[\w一-龥\s\-_.()（）#&+@!,，、·']*$/u;
+    if (!validPattern.test(query)) {
+      return {
+        valid: false,
+        error: '检索条件包含无效字符，仅支持中英文、数字和常见符号（- _ . ( ) 等）'
+      };
+    }
+
+    return { valid: true, error: null };
+  }
+
+  /**
+   * 检索并排序记录
+   * @param {Object} options - 查询选项
+   * @param {string} options.query - 检索关键词（匹配记录名称和文件名，不区分大小写）
+   * @param {string} options.sortBy - 排序方式：time-desc | time-asc | freq-desc | freq-asc
+   * @returns {Array} 过滤排序后的记录数组
+   */
+  queryRecords({ query = '', sortBy = 'time-desc' } = {}) {
+    let result = [...this.records];
+
+    const keyword = query.trim().toLowerCase();
+    if (keyword) {
+      result = result.filter(record =>
+        (record.name || '').toLowerCase().includes(keyword) ||
+        (record.fileName || '').toLowerCase().includes(keyword)
+      );
+    }
+
+    switch (sortBy) {
+      case 'time-asc':
+        result.sort((a, b) => a.createdAt - b.createdAt);
+        break;
+      case 'freq-desc':
+        result.sort((a, b) => b.fundamentalFreq - a.fundamentalFreq);
+        break;
+      case 'freq-asc':
+        result.sort((a, b) => a.fundamentalFreq - b.fundamentalFreq);
+        break;
+      case 'time-desc':
+      default:
+        result.sort((a, b) => b.createdAt - a.createdAt);
+        break;
+    }
+
+    return result;
   }
 
   /**
@@ -220,6 +287,24 @@ export class RecordManager {
   }
 
   /**
+   * 导出指定记录为归档 JSON
+   * @param {Array<string>} ids - 记录 ID 数组
+   * @returns {string} 归档 JSON 字符串
+   */
+  exportRecordsByIds(ids) {
+    const idSet = new Set(ids);
+    const records = this.records.filter(r => idSet.has(r.id));
+    const archive = {
+      archiveVersion: 1,
+      exportedAt: new Date().toISOString(),
+      count: records.length,
+      records
+    };
+    logger.info('导出记录归档', { count: records.length });
+    return JSON.stringify(archive, null, 2);
+  }
+
+  /**
    * 导入记录
    * @param {string} jsonData - JSON 字符串
    * @returns {number} 导入的记录数量
@@ -227,7 +312,10 @@ export class RecordManager {
   importRecords(jsonData) {
     try {
       const data = JSON.parse(jsonData);
-      const records = Array.isArray(data) ? data : [data];
+      // 兼容归档格式（{ records: [...] }）、数组和单条记录
+      const records = Array.isArray(data)
+        ? data
+        : (Array.isArray(data.records) ? data.records : [data]);
       let count = 0;
 
       for (const record of records) {

@@ -780,6 +780,9 @@ body {
 }
 
 .record-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   padding: 10px 12px;
   background: #FFFAF0;
   border-radius: var(--radius-md);
@@ -853,6 +856,133 @@ body {
 
 .records-empty p {
   font-size: 13px;
+}
+
+.records-empty .empty-hint {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 4px;
+}
+
+/* 记录工具栏 */
+.records-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.records-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.records-search .form-input {
+  width: 100%;
+  padding-right: 32px;
+}
+
+.records-search .form-input.input-error {
+  border-color: var(--error-color);
+  background: #FFF5F5;
+}
+
+.btn-clear-search {
+  position: absolute;
+  right: 6px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 4px 6px;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.btn-clear-search:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--error-color);
+}
+
+.search-hint {
+  font-size: 12px;
+  color: var(--error-color);
+  line-height: 1.4;
+}
+
+.records-sort {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.records-selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.select-all-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.select-all-label input {
+  cursor: pointer;
+  accent-color: var(--primary-color);
+}
+
+.selected-count {
+  flex: 1;
+  color: var(--text-secondary);
+}
+
+.btn-export {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-light));
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-export .btn-icon {
+  font-size: 14px;
+}
+
+.btn-export:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-export:disabled {
+  background: #BDBDBD;
+  cursor: not-allowed;
+}
+
+/* 记录项复选框 */
+.record-checkbox {
+  margin-top: 4px;
+  cursor: pointer;
+  accent-color: var(--primary-color);
+  flex-shrink: 0;
+}
+
+.record-info {
+  flex: 1;
+  min-width: 0;
 }
 
 /* 模态框 */

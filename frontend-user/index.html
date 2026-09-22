@@ -133,11 +133,42 @@
             <h2>历史记录</h2>
             <button class="btn-toggle-records" id="toggleRecordsBtn" title="展开/收起">▼</button>
           </div>
-          <div class="records-content" id="recordsContent">
-            <div class="records-list" id="recordsList"></div>
-            <div class="records-empty" id="recordsEmpty">
-              <span class="empty-icon">📋</span>
-              <p>暂无保存的记录</p>
+          <div class="records-wrapper" id="recordsWrapper">
+            <div class="records-toolbar">
+              <div class="records-search">
+                <input type="text" id="recordSearchInput" class="form-input" placeholder="搜索记录名称或文件名">
+                <button class="btn-clear-search" id="clearSearchBtn" title="清除检索">✕</button>
+              </div>
+              <p class="search-hint" id="searchHint" style="display: none;"></p>
+              <select id="recordSortSelect" class="param-select records-sort">
+                <option value="time-desc">时间：最新优先</option>
+                <option value="time-asc">时间：最早优先</option>
+                <option value="freq-desc">基频：从高到低</option>
+                <option value="freq-asc">基频：从低到高</option>
+              </select>
+              <div class="records-selection-bar" id="recordsSelectionBar">
+                <label class="select-all-label">
+                  <input type="checkbox" id="selectAllRecords">
+                  <span>全选</span>
+                </label>
+                <span class="selected-count" id="selectedCount">已选 0 条</span>
+                <button class="btn-export" id="exportRecordsBtn" disabled>
+                  <span class="btn-icon">📦</span>
+                  导出选中
+                </button>
+              </div>
+            </div>
+            <div class="records-content" id="recordsContent">
+              <div class="records-list" id="recordsList"></div>
+              <div class="records-empty" id="recordsEmpty">
+                <span class="empty-icon">📋</span>
+                <p>暂无保存的记录</p>
+              </div>
+              <div class="records-empty" id="recordsNoResult" style="display: none;">
+                <span class="empty-icon">🔍</span>
+                <p>未找到匹配的记录</p>
+                <p class="empty-hint">请尝试调整检索关键词或清除检索条件</p>
+              </div>
             </div>
           </div>
         </section>
