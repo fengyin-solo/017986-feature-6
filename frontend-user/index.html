@@ -134,10 +134,41 @@
             <button class="btn-toggle-records" id="toggleRecordsBtn" title="展开/收起">▼</button>
           </div>
           <div class="records-content" id="recordsContent">
+            <div class="records-toolbar" id="recordsToolbar">
+              <div class="records-search-row">
+                <div class="records-search">
+                  <input type="text" id="recordSearchInput" class="form-input record-search-input" placeholder="搜索记录名称或文件名">
+                  <button class="btn-clear-search" id="clearSearchBtn" title="清除检索" style="display: none;">✕</button>
+                </div>
+                <select id="recordSortSelect" class="param-select record-sort-select">
+                  <option value="time-desc">时间：最新优先</option>
+                  <option value="time-asc">时间：最早优先</option>
+                  <option value="freq-desc">基频：从高到低</option>
+                  <option value="freq-asc">基频：从低到高</option>
+                </select>
+              </div>
+              <div class="records-feedback" id="recordsFeedback" style="display: none;"></div>
+              <div class="records-actions">
+                <label class="records-select-all">
+                  <input type="checkbox" id="selectAllRecords">
+                  <span>全选</span>
+                </label>
+                <span class="records-selected-count" id="recordsSelectedCount"></span>
+                <button class="btn-export-records" id="exportRecordsBtn">
+                  <span class="btn-icon">📦</span>
+                  导出选中
+                </button>
+              </div>
+            </div>
             <div class="records-list" id="recordsList"></div>
             <div class="records-empty" id="recordsEmpty">
               <span class="empty-icon">📋</span>
               <p>暂无保存的记录</p>
+            </div>
+            <div class="records-empty" id="recordsNoResult" style="display: none;">
+              <span class="empty-icon">🔍</span>
+              <p id="noResultText">未找到匹配的记录</p>
+              <button class="btn-clear-filter" id="clearFilterBtn">清除检索条件</button>
             </div>
           </div>
         </section>

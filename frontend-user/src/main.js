@@ -19,6 +19,14 @@ class App {
     this.currentAnalysisResult = null;
     this.currentFileName = '';
     this.selectedRecordId = null;
+    // 记录列表状态：检索词、排序、勾选、滚动位置（打开详情返回后恢复）
+    this.recordListState = {
+      keyword: '',
+      sortValue: 'time-desc',
+      selectedIds: new Set(),
+      scrollTop: 0
+    };
+    this.searchDebounceTimer = null;
   }
 
   async init() {
@@ -333,6 +341,53 @@ class App {
 
     // 删除记录
     document.getElementById('deleteRecordBtn').addEventListener('click', () => this.deleteRecord());
+
+    // 检索输入（防抖，Enter 立即生效）
+    const searchInput = document.getElementById('recordSearchInput');
+    searchInput.addEventListener('input', () => {
+      document.getElementById('clearSearchBtn').style.display = searchInput.value ? 'block' : 'none';
+      clearTimeout(this.searchDebounceTimer);
+      this.searchDebounceTimer = setTimeout(() => this.applySearch(), 300);
+    });
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        clearTimeout(this.searchDebounceTimer);
+        this.applySearch();
+      }
+    });
+
+    // 清除检索
+    document.getElementById('clearSearchBtn').addEventListener('click', () => this.clearSearch());
+    document.getElementById('clearFilterBtn').addEventListener('click', () => this.clearSearch());
+
+    // 排序方式
+    document.getElementById('recordSortSelect').addEventListener('change', (e) => {
+      this.recordListState.sortValue = e.target.value;
+      this.recordListState.scrollTop = 0;
+      this.updateRecordsList();
+    });
+
+    // 全选当前显示的记录
+    document.getElementById('selectAllRecords').addEventListener('change', (e) => {
+      const checked = e.target.checked;
+      document.querySelectorAll('#recordsList .record-select').forEach(checkbox => {
+        checkbox.checked = checked;
+        if (checked) {
+          this.recordListState.selectedIds.add(checkbox.dataset.id);
+        } else {
+          this.recordListState.selectedIds.delete(checkbox.dataset.id);
+        }
+      });
+      this.updateSelectionUI();
+    });
+
+    // 导出选中记录
+    document.getElementById('exportRecordsBtn').addEventListener('click', () => this.exportSelectedRecords());
+
+    // 记忆列表滚动位置
+    document.getElementById('recordsList').addEventListener('scroll', (e) => {
+      this.recordListState.scrollTop = e.target.scrollTop;
+    });
   }
 
   saveRecord() {
@@ -402,28 +457,59 @@ class App {
   }
 
   updateRecordsList() {
-    const records = this.recordManager.getAllRecords();
+    const { keyword, sortValue } = this.recordListState;
+    const [sortBy, sortOrder] = sortValue.split('-');
+    const allRecords = this.recordManager.getAllRecords();
+    const records = this.recordManager.searchRecords({ keyword, sortBy, sortOrder });
+
     const recordsList = document.getElementById('recordsList');
     const recordsEmpty = document.getElementById('recordsEmpty');
+    const recordsNoResult = document.getElementById('recordsNoResult');
+    const recordsToolbar = document.getElementById('recordsToolbar');
 
-    if (records.length === 0) {
+    // 清理已被删除记录的选中状态
+    const existingIds = new Set(allRecords.map(r => r.id));
+    this.recordListState.selectedIds.forEach(id => {
+      if (!existingIds.has(id)) this.recordListState.selectedIds.delete(id);
+    });
+
+    // 没有任何记录：隐藏工具栏，显示空态
+    if (allRecords.length === 0) {
+      recordsToolbar.style.display = 'none';
       recordsList.style.display = 'none';
       recordsEmpty.style.display = 'flex';
+      recordsNoResult.style.display = 'none';
       return;
     }
 
-    recordsList.style.display = 'block';
+    recordsToolbar.style.display = 'flex';
     recordsEmpty.style.display = 'none';
+
+    // 有记录但检索无匹配：显示无结果空态
+    if (records.length === 0) {
+      recordsList.style.display = 'none';
+      recordsNoResult.style.display = 'flex';
+      document.getElementById('noResultText').textContent =
+        `未找到与「${keyword}」匹配的记录，请更换关键词试试`;
+      this.updateSelectionUI();
+      return;
+    }
+
+    recordsList.style.display = 'flex';
+    recordsNoResult.style.display = 'none';
 
     recordsList.innerHTML = records.map(record => `
       <div class="record-item" data-id="${record.id}">
-        <div class="record-main">
-          <span class="record-name" title="${record.name}">${this.truncateText(record.name, 25)}</span>
-          <span class="record-freq">${record.fundamentalFreq.toFixed(1)} Hz</span>
-        </div>
-        <div class="record-meta">
-          <span class="record-file" title="${record.fileName}">${this.truncateText(record.fileName, 20)}</span>
-          <span class="record-time">${this.recordManager.formatDate(record.createdAt)}</span>
+        <input type="checkbox" class="record-select" data-id="${record.id}" ${this.recordListState.selectedIds.has(record.id) ? 'checked' : ''}>
+        <div class="record-info">
+          <div class="record-main">
+            <span class="record-name" title="${this.escapeHtml(record.name)}">${this.escapeHtml(this.truncateText(record.name, 25))}</span>
+            <span class="record-freq">${record.fundamentalFreq.toFixed(1)} Hz</span>
+          </div>
+          <div class="record-meta">
+            <span class="record-file" title="${this.escapeHtml(record.fileName)}">${this.escapeHtml(this.truncateText(record.fileName, 20))}</span>
+            <span class="record-time">${this.recordManager.formatDate(record.createdAt)}</span>
+          </div>
         </div>
       </div>
     `).join('');
@@ -434,6 +520,115 @@ class App {
         this.showRecordDetail(id);
       });
     });
+
+    recordsList.querySelectorAll('.record-select').forEach(checkbox => {
+      checkbox.addEventListener('click', (e) => e.stopPropagation());
+      checkbox.addEventListener('change', () => {
+        const id = checkbox.dataset.id;
+        if (checkbox.checked) {
+          this.recordListState.selectedIds.add(id);
+        } else {
+          this.recordListState.selectedIds.delete(id);
+        }
+        this.updateSelectionUI();
+      });
+    });
+
+    // 恢复滚动位置（打开详情返回、删除记录后保持列表位置）
+    recordsList.scrollTop = this.recordListState.scrollTop;
+
+    this.updateSelectionUI();
+  }
+
+  /**
+   * 应用检索条件（先校验，无效时提示并保留当前列表）
+   */
+  applySearch() {
+    const input = document.getElementById('recordSearchInput');
+    const keyword = input.value.trim();
+    const feedback = document.getElementById('recordsFeedback');
+    const result = this.recordManager.validateSearchKeyword(keyword);
+
+    if (!result.valid) {
+      feedback.textContent = result.message;
+      feedback.style.display = 'block';
+      return;
+    }
+
+    feedback.style.display = 'none';
+    this.recordListState.keyword = keyword;
+    this.recordListState.scrollTop = 0;
+    this.updateRecordsList();
+  }
+
+  /**
+   * 清除检索条件
+   */
+  clearSearch() {
+    document.getElementById('recordSearchInput').value = '';
+    document.getElementById('clearSearchBtn').style.display = 'none';
+    document.getElementById('recordsFeedback').style.display = 'none';
+    this.recordListState.keyword = '';
+    this.recordListState.scrollTop = 0;
+    this.updateRecordsList();
+  }
+
+  /**
+   * 更新选中计数和全选复选框状态
+   */
+  updateSelectionUI() {
+    const count = this.recordListState.selectedIds.size;
+    document.getElementById('recordsSelectedCount').textContent = count > 0 ? `已选 ${count} 条` : '';
+
+    const checkboxes = [...document.querySelectorAll('#recordsList .record-select')];
+    const checkedCount = checkboxes.filter(cb => cb.checked).length;
+    const selectAll = document.getElementById('selectAllRecords');
+    selectAll.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
+    selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+  }
+
+  /**
+   * 导出选中的记录为 JSON 文件
+   */
+  exportSelectedRecords() {
+    const ids = [...this.recordListState.selectedIds];
+    if (ids.length === 0) {
+      this.uiController.showToast('请先勾选要导出的记录', 'warning');
+      return;
+    }
+
+    try {
+      const json = this.recordManager.exportRecords(ids);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const timestamp = this.recordManager.formatTimestamp().replace(/[-:]/g, '').replace(' ', '-');
+      link.href = url;
+      link.download = `guqin-records-${timestamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+
+      this.uiController.showToast(`已导出 ${ids.length} 条记录`, 'success');
+      logger.info('导出记录成功', { count: ids.length });
+    } catch (error) {
+      logger.error('导出记录失败', error);
+      this.uiController.showToast('导出记录失败: ' + error.message, 'error');
+    }
+  }
+
+  /**
+   * HTML 转义，防止记录名称/文件名注入
+   */
+  escapeHtml(text) {
+    if (text == null) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   truncateText(text, maxLength) {
@@ -470,7 +665,7 @@ class App {
           <div class="detail-grid">
             <div class="detail-item">
               <span class="detail-label">文件名</span>
-              <span class="detail-value">${record.fileName}</span>
+              <span class="detail-value">${this.escapeHtml(record.fileName)}</span>
             </div>
             <div class="detail-item">
               <span class="detail-label">创建时间</span>
@@ -527,7 +722,7 @@ class App {
         ${record.note ? `
           <div class="detail-section">
             <h4>备注</h4>
-            <p class="record-note">${record.note}</p>
+            <p class="record-note">${this.escapeHtml(record.note)}</p>
           </div>
         ` : ''}
       </div>

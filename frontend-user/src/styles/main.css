@@ -768,18 +768,127 @@ body {
 }
 
 .records-content {
-  max-height: 300px;
-  overflow-y: auto;
   margin-top: 10px;
+}
+
+/* 记录工具栏（检索/排序/导出） */
+.records-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.records-search-row {
+  display: flex;
+  gap: 8px;
+}
+
+.records-search {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.record-search-input {
+  width: 100%;
+  padding: 8px 28px 8px 10px;
+  font-size: 13px;
+}
+
+.btn-clear-search {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 50%;
+  line-height: 1;
+}
+
+.btn-clear-search:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--text-primary);
+}
+
+.record-sort-select {
+  padding: 8px 10px;
+  font-size: 12px;
+  flex-shrink: 0;
+  max-width: 132px;
+}
+
+.records-feedback {
+  font-size: 12px;
+  color: var(--error-color);
+  background: rgba(244, 67, 54, 0.08);
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+}
+
+.records-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.records-select-all {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.records-select-all input {
+  accent-color: var(--primary-color);
+  cursor: pointer;
+  margin: 0;
+}
+
+.records-selected-count {
+  flex: 1;
+}
+
+.btn-export-records {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-light));
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-export-records:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
 
 .records-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .record-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   padding: 10px 12px;
   background: #FFFAF0;
   border-radius: var(--radius-md);
@@ -792,6 +901,18 @@ body {
   background: #FFF8DC;
   border-color: var(--border-color);
   transform: translateX(2px);
+}
+
+.record-select {
+  margin-top: 3px;
+  cursor: pointer;
+  accent-color: var(--primary-color);
+  flex-shrink: 0;
+}
+
+.record-info {
+  flex: 1;
+  min-width: 0;
 }
 
 .record-main {
@@ -853,6 +974,23 @@ body {
 
 .records-empty p {
   font-size: 13px;
+}
+
+.btn-clear-filter {
+  margin-top: 12px;
+  padding: 6px 14px;
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--primary-color);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-clear-filter:hover {
+  background: rgba(139, 69, 19, 0.08);
+  border-color: var(--primary-color);
 }
 
 /* 模态框 */

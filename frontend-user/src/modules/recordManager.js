@@ -93,6 +93,62 @@ export class RecordManager {
   }
 
   /**
+   * 检索并排序记录
+   * @param {Object} options - 检索选项
+   * @param {string} options.keyword - 关键词（匹配记录名称或文件名，不区分大小写）
+   * @param {string} options.sortBy - 排序字段：'time'（保存时间）或 'freq'（基频）
+   * @param {string} options.sortOrder - 排序方向：'desc' 或 'asc'
+   * @returns {Array} 过滤排序后的记录数组
+   */
+  searchRecords({ keyword = '', sortBy = 'time', sortOrder = 'desc' } = {}) {
+    let result = [...this.records];
+
+    const kw = keyword.trim().toLowerCase();
+    if (kw) {
+      result = result.filter(r =>
+        (r.name && r.name.toLowerCase().includes(kw)) ||
+        (r.fileName && r.fileName.toLowerCase().includes(kw))
+      );
+    }
+
+    result.sort((a, b) => {
+      let cmp;
+      if (sortBy === 'freq') {
+        cmp = (a.fundamentalFreq || 0) - (b.fundamentalFreq || 0);
+      } else {
+        cmp = (a.createdAt || 0) - (b.createdAt || 0);
+      }
+      return sortOrder === 'asc' ? cmp : -cmp;
+    });
+
+    return result;
+  }
+
+  /**
+   * 校验检索关键词
+   * @param {string} keyword - 检索关键词
+   * @returns {{valid: boolean, message: string}} 校验结果
+   */
+  validateSearchKeyword(keyword) {
+    const MAX_KEYWORD_LENGTH = 50;
+    if (keyword.length > MAX_KEYWORD_LENGTH) {
+      return {
+        valid: false,
+        message: `检索条件过长，最多支持 ${MAX_KEYWORD_LENGTH} 个字符（当前 ${keyword.length} 个）`
+      };
+    }
+    // 不允许控制字符及尖括号，避免无意义检索和注入风险
+    // eslint-disable-next-line no-control-regex
+    if (/[<>\u0000-\u001f]/.test(keyword)) {
+      return {
+        valid: false,
+        message: '检索条件包含无效字符（如 <、> 或控制字符），请修改后重试'
+      };
+    }
+    return { valid: true, message: '' };
+  }
+
+  /**
    * 根据 ID 获取记录
    * @param {string} id - 记录 ID
    * @returns {Object|null} 记录对象
@@ -211,11 +267,19 @@ export class RecordManager {
 
   /**
    * 导出记录为 JSON
-   * @param {string} id - 记录 ID（可选，不传则导出所有）
+   * @param {string|string[]|null} ids - 记录 ID、ID 数组（可选，不传则导出所有）
    * @returns {string} JSON 字符串
    */
-  exportRecords(id = null) {
-    const data = id ? this.getRecord(id) : this.getAllRecords();
+  exportRecords(ids = null) {
+    let data;
+    if (Array.isArray(ids)) {
+      const idSet = new Set(ids);
+      data = this.records.filter(r => idSet.has(r.id));
+    } else if (ids) {
+      data = this.getRecord(ids);
+    } else {
+      data = this.getAllRecords();
+    }
     return JSON.stringify(data, null, 2);
   }
 
